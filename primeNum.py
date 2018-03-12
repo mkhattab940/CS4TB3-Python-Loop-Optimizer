@@ -3,10 +3,10 @@
 import math
 
 # prime numbers are greater than 1
-def prime (num):
-   	for j in range (2,int(math.sqrt(num))+1):
-   		if (num % j) == 0:
-   			return False
+def prime(	num 	,	num2	):	
+	for j in range (2,int(math.sqrt(num))+1):
+		if (num % j) == 0:
+			return False
 	return True
 
 
