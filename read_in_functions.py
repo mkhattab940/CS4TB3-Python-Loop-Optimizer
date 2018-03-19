@@ -19,6 +19,8 @@ def parser(read_data, funcs, inner_loop):
 		while_loop_found = re.search("^(\t*)while\s+.*:\s*$", read_data[line_num])
 		
 		if def_found:
+			opt_code.append(read_data[line_num])
+			print("FOUND A DEF!!")
 			indent = len(def_found.group(1))
 			fname = def_found.group(2)
 			params = def_found.group(3).replace(" ","").replace("\t","").split(",")
@@ -28,7 +30,7 @@ def parser(read_data, funcs, inner_loop):
 
 			body = []
 
-			while True:
+			while line_num < len(read_data)-1:
 				line_num += 1
 				#print(read_data[line_num])
 				if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
@@ -48,9 +50,15 @@ def parser(read_data, funcs, inner_loop):
 			f_code = {"fname": fname, "params": params, "fcode": body}
 			funcs[fname] = f_code
 
+			print(body)
+
 			opt_body = parser(body, funcs, 0) # We want to parse body of function recursively
 								# Funcs we have already found will be available to funcs defined inside current function
+			opt_code = opt_code + opt_body
 		elif for_loop_found or while_loop_found:
+			opt_code.append(read_data[line_num])
+			print("FOUND A LOOP!")
+			print(read_data[line_num])
 			inner_loop = 0 # If we just found a loop, this can't the body of an inner loop
 
 			if for_loop_found:
@@ -60,7 +68,7 @@ def parser(read_data, funcs, inner_loop):
 
 			body = []
 
-			while True:
+			while line_num < len(read_data)-1:
 				line_num += 1
 				#print(read_data[line_num])
 				if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
@@ -76,141 +84,87 @@ def parser(read_data, funcs, inner_loop):
 				else: # We are outside the function (i.e. done)
 					line_num -= 1 # Corrective
 					break
-
+			print(body)
 			opt_body = parser(body, funcs, 1) # We want to parse body of function recursively
 									# Set flag inner_loop to say 
-
+			opt_code = opt_code + opt_body
 		line_num += 1
-		opt_code = opt_code + opt_body
+		
 	
 		############################
 		# CODE HERE TO CATCH LOOPS # (assumes no function definition inside loops. FIX LATER)
 		############################
-		
+	print(opt_code)
+	print(inner_loop)
 	if inner_loop:
 		tab_counter = 0 
 		RHS = "0"
 
 		#check for for
-		for string in read_data:
-			if (re.search("^(\t*)for*",string)):
-				#counts number of tabs
-				m =string.count("\t")
-				#print "M: ",m
-				#print "Found for"
-				index = read_data.index(string)
-				#print "Index: ",read_data.index(string)
+		for string in opt_code:
+			#counts number of tabs
+			m =string.count("\t")
+			#print "M: ",m
+			#print "Found for"
+			index = read_data.index(string)
+			#print "Index: ",read_data.index(string)
 
-				#try to match function inside loop
-				i = index+1
-				for function in read_data[i:len(read_data)]:
+			#try to match function inside loop
+			i = index+1
+			for function in read_data[i:len(read_data)]:
 
-					#print "funciton ",function
-					#check for number of tabs
-					m_new =function.count("\t")
-					#print "M_new ",m_new
+				print "funciton ",function
+				#check for number of tabs
+				# m_new =function.count("\t")
+				#print "M_new ",m_new
 
-					#not a function if tabs are less than or equal to line before
-					if (m_new <= m):
-						print "inner loop not"
-						break
+				#otherwise it is a function so replace it
+					#check if string matches in our dictionary
+				temp = function.split("(")
+				func_name = temp[0].split()
+				print "NEW NAME" ,func_name
+				#look in dictionary for key == num_function
+				for name,values in funcs.items():
+					if ("=" in func_name):
+						RHS = "1"
+						print ("there is an equal")
+					#match key to name 
+					elif (name == func_name[0]):
+						if(RHS == "0"):
 
-					#otherwise it is a function so replace it
-					else:
-						#check if string matches in our dictionary
-						temp = function.split("(")
-						func_name = temp[0].split()
-						#print "NEW NAME" ,func_name
-						#look in dictionary for key == num_function
-						for name,values in funcs.items():
-							#print "NAME in FCODE:", name
-							#match key to name 
-							if (name == func_name[0]):
-								print "Matches"
+							print "Matches"
+						#remove function call
+							read_data.pop(i)
+						#if function is found in dictionary put body in list
+							read_data[i:i] = values['fcode']
+							print "READ DATA", read_data
+					elif (name == func_name[2]):
+							if(RHS == "1"):
+								print "RHS Matches"
 								#remove function call
+								#do more work to figure out right i all the time
+								#print read_data
 								read_data.pop(i)
+								print(values['fcode'][2])
+								tabs =values['fcode'][-1].count("\t")
+								temp_value = values['fcode'][-1].split('return')
+								return_value = temp_value[1]
+								#print(return_value)
+								new_value = "x ="+ (return_value)
+								#print(new_value)
+								print(tabs)
+								tabscount = tabs * "\t"
+								values['fcode'][-1] = tabscount + new_value
 								#if function is found in dictionary put body in list
 								read_data[i:i] = values['fcode']
 								print "READ DATA", read_data 
-							else:
-								print "No match"
-
-
-
-			#check for while
-			elif (re.search("^(\t*)while*",string)):
-				#counts number of tabs
-				m =string.count("\t")
-				#print "M: ",m
-				#print "Found while"
-				#print "Index: ",read_data.index(string)
-				#print "M: ",m
-				#print "Found for"
-				index = read_data.index(string)
-				#print "Index: ",read_data.index(string)
-
-				#try to match function inside loop
-				i = index+1
-				for function in read_data[i:len(read_data)]:
-
-					#print "funciton ",function
-					#check for number of tabs
-					m_new =function.count("\t")
-					#print "M_new ",m_new
-
-					#not a function if tabs are less than or equal to line before
-					if (m_new <= m):
-						print "inner loop not"
-						break
-
-					#otherwise it is a function so replace it
 					else:
-						#check if string matches in our dictionary
-						temp = function.split("(")
-						func_name = temp[0].split()
-						print ("func_name:",func_name)
-						if ("=" in func_name):
-							RHS = "1"
-							print ("there is an equal")
-						#print "NEW NAME" ,func_name
-						#look in dictionary for key == num_function
-						for name,values in funcs.items():
-							#print "NAME in FCODE:", name
-							#match key to name 
-							if (name == func_name[0]):
-								if(RHS == "0"):
-									print "Matches"
-									#remove function call
-									#do more work to figure out right i all the time
-									read_data.pop(i)
-									#if function is found in dictionary put body in list
-									read_data[i:i] = values['fcode']
-									print "READ DATA", read_data 
-							elif (name == func_name[2]):
-								if(RHS == "1"):
-									print "RHS Matches"
-									#remove function call
-									#do more work to figure out right i all the time
-									#print read_data
-									read_data.pop(i)
-									#print(values['fcode'][2])
-									tabs =values['fcode'][-1].count("\t")
-									temp_value = values['fcode'][-1].split('return')
-									return_value = temp_value[1]
-									#print(return_value)
-									new_value = "x ="+ (return_value)
-									#print(new_value)
-									#print(tabs)
-									tabscount = tabs * "\t"
-									values['fcode'][-1] = tabscount + new_value
-									#if function is found in dictionary put body in list
-									read_data[i:i] = values['fcode']
-									print "READ DATA", read_data 
-							else:
-								print "No match"
+						print "No match"
 
-		
-	return opt_code
+		return read_data
+	else:
+		print("N")
+		return opt_code
 	
 
 def main():
