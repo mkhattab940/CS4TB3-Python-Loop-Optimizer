@@ -14,12 +14,15 @@ def parser(read_data, funcs, inner_loop):
 	opt_code = []
 
 	while line_num < len(read_data):
+
+		opt_code.append(read_data[line_num])
+
 		def_found = re.search("^(\t*)def\s+(\w+)\s*\((.*)\)\s*:\s*$", read_data[line_num])
 		for_loop_found = re.search("^(\t*)for\s+.*:\s*$", read_data[line_num])
 		while_loop_found = re.search("^(\t*)while\s+.*:\s*$", read_data[line_num])
 		
 		if def_found:
-			opt_code.append(read_data[line_num])
+			
 			print("FOUND A DEF!!")
 			indent = len(def_found.group(1))
 			fname = def_found.group(2)
@@ -56,7 +59,7 @@ def parser(read_data, funcs, inner_loop):
 								# Funcs we have already found will be available to funcs defined inside current function
 			opt_code = opt_code + opt_body
 		elif for_loop_found or while_loop_found:
-			opt_code.append(read_data[line_num])
+
 			print("FOUND A LOOP!")
 			print(read_data[line_num])
 			inner_loop = 0 # If we just found a loop, this can't the body of an inner loop
