@@ -15,11 +15,11 @@ def parser(read_data, funcs, inner_loop):
 
 	while line_num < len(read_data):
 
-		opt_code.append(read_data[line_num])
+		#opt_code.append(read_data[line_num])
 
-		def_found = re.search("^(\t*)def\s+(\w+)\s*\((.*)\)\s*:\s*$", read_data[line_num])
-		for_loop_found = re.search("^(\t*)for\s+.*:\s*$", read_data[line_num])
-		while_loop_found = re.search("^(\t*)while\s+.*:\s*$", read_data[line_num])
+		def_found = re.search("^(\t*)def\s+(\w+)\s*\((.*)\)\s*:\s*(.*)\n$", read_data[line_num])
+		for_loop_found = re.search("^(\t*)for\s*.*:\s*(.*)\n$", read_data[line_num])
+		while_loop_found = re.search("^(\t*)while\s*.*:\s*(.*)\n$", read_data[line_num])
 		
 		if def_found:
 			
@@ -27,28 +27,30 @@ def parser(read_data, funcs, inner_loop):
 			indent = len(def_found.group(1))
 			fname = def_found.group(2)
 			params = def_found.group(3).replace(" ","").replace("\t","").split(",")
-			#print(indent)
-			#print (fname)
-			#print (params)
+			
+			#print(len(def_found.group(4)))
+			opt_code.append(read_data[line_num][:-len(def_found.group(4))-1] + "\n")
 
-			body = []
+			if len(def_found.group(4)) > 0 and not re.match("^\s*$", def_found.group(4)):
+				body = [def_found.group(1) + "\t" + def_found.group(4)]
+			else:
+				body = []
+				while line_num < len(read_data)-1:
+					line_num += 1
+					#print(read_data[line_num])
+					if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
+						continue
+					if re.match("^\s*#.*$", read_data[line_num]): #Skip comment lines
+						continue	
+					
+					m2 = re.search("^(\t*).*$",read_data[line_num])
+					indent2 = len(m2.group(1))
 
-			while line_num < len(read_data)-1:
-				line_num += 1
-				#print(read_data[line_num])
-				if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
-					continue
-				if re.match("^\s*#.*$", read_data[line_num]): #Skip comment lines
-					continue	
-				
-				m2 = re.search("^(\t*).*$",read_data[line_num])
-				indent2 = len(m2.group(1))
-
-				if indent2 > indent: #All lines in the functions will be indented more than the function def line
-					body.append(read_data[line_num])
-				else: # We are outside the function (i.e. done)
-					line_num -= 1 # Corrective
-					break
+					if indent2 > indent: #All lines in the functions will be indented more than the function def line
+						body.append(read_data[line_num])
+					else: # We are outside the function (i.e. done)
+						line_num -= 1 # Corrective
+						break
 
 			f_code = {"fname": fname, "params": params, "fcode": body}
 			funcs[fname] = f_code
@@ -61,36 +63,47 @@ def parser(read_data, funcs, inner_loop):
 		elif for_loop_found or while_loop_found:
 
 			print("FOUND A LOOP!")
-			print(read_data[line_num])
+			#print(read_data[line_num])
 			inner_loop = 0 # If we just found a loop, this can't the body of an inner loop
 
 			if for_loop_found:
 				indent = len(for_loop_found.group(1))
+				first_line = for_loop_found.group(1) + "\t" + for_loop_found.group(2)
+				opt_code.append(read_data[line_num][:-len(for_loop_found.group(2))-1] + "\n")
 			else:
 				indent = len(while_loop_found.group(1))
+				first_line = while_loop_found.group(1) + "\t" + while_loop_found.group(2)
+				opt_code.append(read_data[line_num][:-len(while_loop_found.group(2))-1] + "\n")
 
-			body = []
+			# print (len(first_line))
+			# print(first_line)
+			if len(first_line) > 0 and not re.match("^\s*$", first_line):
+				body = [first_line]
+			else:
+				body = []
+				while line_num < len(read_data)-1:
+					line_num += 1
+					#print(read_data[line_num])
+					if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
+						continue
+					if re.match("^\s*#.*$", read_data[line_num]): #Skip comment lines
+						continue	
+					
+					m2 = re.search("^(\t*).*$",read_data[line_num])
+					indent2 = len(m2.group(1))
 
-			while line_num < len(read_data)-1:
-				line_num += 1
-				#print(read_data[line_num])
-				if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
-					continue
-				if re.match("^\s*#.*$", read_data[line_num]): #Skip comment lines
-					continue	
-				
-				m2 = re.search("^(\t*).*$",read_data[line_num])
-				indent2 = len(m2.group(1))
+					if indent2 > indent: #All lines in the functions will be indented more than the function def line
+						body.append(read_data[line_num])
+					else: # We are outside the function (i.e. done)
+						line_num -= 1 # Corrective
+						break
 
-				if indent2 > indent: #All lines in the functions will be indented more than the function def line
-					body.append(read_data[line_num])
-				else: # We are outside the function (i.e. done)
-					line_num -= 1 # Corrective
-					break
 			print(body)
 			opt_body = parser(body, funcs, 1) # We want to parse body of function recursively
 									# Set flag inner_loop to say 
 			opt_code = opt_code + opt_body
+		else:
+			opt_code.append(read_data[line_num])
 		line_num += 1
 		
 	
