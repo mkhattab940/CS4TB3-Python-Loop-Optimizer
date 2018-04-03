@@ -183,6 +183,8 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 		for line in opt_code:
 			i = 0
 			line_rewrite = scope_indentation + "\t"
+			ident_match = re.search("^(\t*).*", line)
+			indentation = ident_match.group(1)
 			while i < len(line):
 				print("hurr")
 				ident_found = re.search("[A-Za-z_]\w*", line[i:]) #match next identifier
@@ -196,7 +198,7 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 							params_found = re.search("^(.*)\)", func_call_found.string[func_call_found.end():])
 							if funcs[ident]: # If this function is in funcs 
 								params = params_found.group(1).replace(" ","").replace("\t","").split(",")
-								inline_it = replace_params(funcs[ident], params, scope_indentation)
+								inline_it = replace_params(funcs[ident], params, scope_indentation + indentation)
 								inlined_code = inlined_code + inline_it
 								line_rewrite += " X " #TODO: Generate var names
 							else:

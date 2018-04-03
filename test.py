@@ -1,6 +1,8 @@
 def test(x,y):
 	x=3
 	y=4
+	for i in range(3):
+		print(i)
 	return x+y
 
 flag = True
@@ -8,7 +10,8 @@ flag = True
 while (flag):
 	A=1
 	B=2
-	x=test(A,B)
+	if True:
+		x=test(A,B)
 
 
 
