@@ -1,4 +1,4 @@
-def test():
+def test(x,y):
 	x=3
 	y=4
 	return x+y
@@ -6,7 +6,9 @@ def test():
 flag = True
 
 while (flag):
-	x=test()
+	A=1
+	B=2
+	x=test(A,B)
 
 
 

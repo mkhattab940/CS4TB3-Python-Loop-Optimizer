@@ -3,11 +3,60 @@
 
 # For now assume no function definitions inside loops
 
+VAR = 1; FUNCTION = 2; NEWLINE = 3; KEYWORD = 4; MISC = 4;
+
+keywords = [ "and",       "del",       "from",      "not",       "while",
+"as",        "elif",      "global",    "or",        "with",
+"assert",    "else",      "if",        "pass",      "yield",
+"break",     "except",    "import",    "print",
+"class",     "exec",      "in",        "raise",
+"continue",  "finally",   "is",        "return",
+"def",       "for",       "lambda",    "try" ]
+
 import sys
 import re
 
+def replace_params(func_def, call_params):
+	fname = func_def["fname"]
+	fparams = func_def["params"]
+	fcode = func_def["fcode"]
 
-def parser(read_data, funcs, inner_loop):
+	#TODO: replace literal values in call_params with variable names
+
+	fcode_inlined = []
+	for line in fcode:
+		i = 0
+		line_inlined = ""
+		while i < len(line):
+			print(len(line))
+			print(i)
+			ident_found = re.search("[A-Za-z_]\w*", line[i:]) #match next identifier
+			if ident_found:
+				line_inlined += ident_found.string[:ident_found.start()] #Add chars not associated with identifiers
+				
+				ident = ident_found.string[ident_found.start():ident_found.end()]
+				print(ident)
+				if ident not in keywords: # Make sure we're not dealing with a keyword
+					func_call_found = re.search("^\s*\(", ident_found.string[ident_found.end():])
+					if not func_call_found: # This is a variable
+						if ident in fparams: # This variable was passed in
+							line_inlined += call_params[fparams.index(ident)]
+						else:
+							line_inlined += ident
+					else:
+						line_inlined += ident
+				else:
+					line_inlined += ident
+
+				i = i + ident_found.end()
+			else:
+				line_inlined += line[i:]
+				break
+		fcode_inlined.append(line_inlined)
+	return fcode_inlined
+
+
+def parser(read_data, funcs = {}, inner_loop = 0):
 	line_num = 0	#init counter
 	#funcs = {}	#init list for storing functions
 
@@ -107,148 +156,54 @@ def parser(read_data, funcs, inner_loop):
 		line_num += 1
 		
 	
-		############################
-		# CODE HERE TO CATCH LOOPS # (assumes no function definition inside loops. FIX LATER)
-		############################
+	############################
+	# CODE HERE TO CATCH LOOPS # (assumes no function definition inside loops. FIX LATER)
+	############################
 	#print("x =", opt_code)
 	#print(inner_loop)
 	#print("i am here")
 	tab_counter = 0 
 	RHS = "0"
 	if(inner_loop):
-		print ("OPT ",opt_code)
+		print("INNER LOOP")
+		print (opt_code)
 		print (funcs)
-		for name,values in funcs.items():
-			for string in opt_code:
-				index = opt_code.index(string)					
-				print (index)
-				#try to match function inside loop
-				i = index+1
-				temp = string.split("(")
-				print("TEMP", temp)
-
-
-				#func_name = temp[0].split()
-				#checks if it is RHS
-				if ("=" in string):
-					func_name = temp[0].split()
-					print("func", func_name)
-					#check how many indexes
-					if (len(func_name) > 1):
-						print (len(func_name))
-
-
-					opt_code.pop(index)
-					RHS = "1"
-					print ("there is an equal")
-					print("f",func_name)
-					#split to get function name
-					#incase theres space
-					new_func_name = func_name[0].split("=")
-					print ("new_func_name",new_func_name)
-					#check if right hand side is a function name
-					if (name == new_func_name[1]):
-						print "RHS Matches"
-
-						#remove function call
-						#do more work to figure out right i all the time
-						#read_data.pop(i)
-						#print(values['fcode'][2])
-						tabs =values['fcode'][-1].count("\t")
-						print("tabs:",tabs)
-						temp_value = values['fcode'][-1].split('return')
-						print("temp_value:",temp_value)
-
-						return_value = temp_value[1]
-						print("return_value:",return_value)
-
-						#print(return_value)
+		inlined_code = []
+		for line in opt_code:
+			i = 0
+			line_rewrite = ""
+			while i < len(line):
+				print("hurr")
+				ident_found = re.search("[A-Za-z_]\w*", line[i:]) #match next identifier
+				if ident_found:
+					line_rewrite += ident_found.string[:ident_found.start()] #Add chars not associated with identifiers
 					
-						print(new_func_name)
-						new_value = new_func_name[0]+"="+ (return_value)
-						print(new_value)
-						#print(tabs)
-						tabscount = tabs * "\t"
-						values['fcode'][-1] = tabscount + new_value
-						#if function is found in dictionary put body in list
-						opt_code[i:i] = values['fcode']
-						print "OPT 3", opt_code 
-						return opt_code
-
-				elif (name == func_name[0]):
-						opt_code.pop(index)
-
-						print "Matches"
-						opt_code[i:i] = values['fcode']
-						print ("OPT2 ",opt_code)
-						print("values",values['fcode'])
-				return opt_code
-		#		print "READ DATA", read_data 
-		#	else:
-		#		print "No match"
-		return opt_code
-
-						
-		'''
-		tab_counter = 0 
-		RHS = "0"
-
-		#check for for
-		
-
-				if ("=" in name):
-					RHS = "1"
-					print ("there is an equal")
-					#print "NEW NAME" ,func_name
-					#look in dictionary for key == num_function
-						#print "NAME in FCODE:", name
-						#match key to name 
-					if (name == func_name[0]):
-						if(RHS == "0"):
-							print "Matches"
-							#remove function call
-							#do more work to figure out right i all the time
-							read_data.pop(i)
-							#if function is found in dictionary put body in list
-							read_data[i:i] = values['fcode']
-							print "READ DATA", read_data 
-					elif (name == func_name[2]):
-						if(RHS == "1"):
-							print "RHS Matches"
-							#remove function call
-							#do more work to figure out right i all the time
-							#print read_data
-							read_data.pop(i)
-							#print(values['fcode'][2])
-							tabs =values['fcode'][-1].count("\t")
-							temp_value = values['fcode'][-1].split('return')
-							return_value = temp_value[1]
-							#print(return_value)
-							new_value = "x ="+ (return_value)
-							#print(new_value)
-							#print(tabs)
-							tabscount = tabs * "\t"
-							values['fcode'][-1] = tabscount + new_value
-							#if function is found in dictionary put body in list
-							read_data[i:i] = values['fcode']
-							print "READ DATA", read_data 
+					ident = ident_found.string[ident_found.start():ident_found.end()]
+					if ident not in keywords: # Make sure we're not dealing with a keyword
+						func_call_found = re.search("^\s*\(", ident_found.string[ident_found.end():])
+						if func_call_found: # This is a func call
+							params_found = re.search("^(.*)\)", func_call_found.string[func_call_found.end():])
+							if funcs[ident]: # If this function is in funcs 
+								params = params_found.group(1).replace(" ","").replace("\t","").split(",")
+								inline_it = replace_params(funcs[ident], params)
+								inlined_code = inlined_code + inline_it
+								line_rewrite += " X " #TODO: Generate var names
+							else:
+								line_rewrite += ident + "(" + params_found.group(1)
+							i = i + params_found.end() + func_call_found.end() + ident_found.end()
+						else:
+							line_rewrite += ident
+							i = i + ident_found.end()
 					else:
-						print "No match"
-				elif (name == func_name[0]):
-					print "Matches"
-					#remove function call
-					read_data.pop(i)
-					#if function is found in dictionary put body in list
-					read_data[i:i] = values['fcode']
-					print "READ DATA", read_data 
+						line_rewrite += ident
+						i = i + ident_found.end()
+
 				else:
-					print "No match"
+					line_rewrite += line[i:]
+					break
+			inlined_code.append(line_rewrite)
+		return inlined_code
 
-		
-
-		return read_data
-
-'''
 	else:
 		print("N")
 		return opt_code
@@ -263,7 +218,7 @@ def main():
 	#print (len(read_data))
 
 
-	opt_code = parser(read_data, {}, 0) 
+	opt_code = parser(read_data) 
 
 	#print(funcs)
 	new_file = open('generated.py', 'w')
