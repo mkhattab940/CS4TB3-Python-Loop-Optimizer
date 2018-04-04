@@ -36,10 +36,10 @@ def lex():
 	eol_found = re.search("^\s*(\n)", line2lex[lnidx:])
 	lp_found = re.search("^\s*(\()", line2lex[lnidx:])
 	rp_found = re.search("^\s*(\))", line2lex[lnidx:])
-	comma_found = re.search("^\s*(,))", line2lex[lnidx:])
+	comma_found = re.search("^\s*(,)", line2lex[lnidx:])
 
 	if lnidx > 0:
-		assign_found = re.search("^\s*([^<>=!+\-*/%&|\^]=[^=]", line2lex[lnidx-1:])
+		assign_found = re.search("^\s*([^<>=!+\-*/%&|\^]=[^=])", line2lex[lnidx-1:])
 	else:
 		assign_found = False
 	ident_found = re.search("^\s*([A-Za-z_]\w*)", line2lex[lnidx:]) #match next identifier
@@ -282,10 +282,33 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 			print("HERE:" + read_data[line_num])
 			opt_code.append(read_data[line_num])
 			# Keep a dictionary of variables in this scope
-			assign_found = re.search("^\t*(.*)=.*$", read_data[line_num])
-			if assign_found:
-				vars_assigned = assign_found.group(1).replace(" ","").replace("\t","").split(",")
-				vars_in_scope = vars_in_scope + vars_assigned
+			loadLex(read_data[line_num])
+
+			new_ids = []
+			token, text = lex()
+			g = 0;
+			if (token == KEYWORD and text == "global"):
+				token, text = lex()
+				g = 1
+
+			while token == IDENTITY:
+				new_ids.append(text)
+				token, _ = lex()
+				if token == COMMA:
+					token, text = lex()
+				elif token == ASSIGN:
+					vars_in_scope = vars_in_scope + new_ids
+					break
+				else:
+					if g:
+						vars_in_scope = vars_in_scope + new_ids
+					break
+			
+
+			# assign_found = re.search("^\t*(.*)=.*$", read_data[line_num])
+			# if assign_found:
+			# 	vars_assigned = assign_found.group(1).replace(" ","").replace("\t","").split(",")
+			# 	vars_in_scope = vars_in_scope + vars_assigned
 
 		line_num += 1
 		
