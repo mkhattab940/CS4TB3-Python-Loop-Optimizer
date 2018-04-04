@@ -38,8 +38,8 @@ def replace_params(func_def, call_params, indentation, vars_in_scope):
 	fparams = func_def["params"]
 	fcode = func_def["fcode"]
 
-	print("VARSINSCOPE: ")
-	print(vars_in_scope)
+	#print("VARSINSCOPE: ")
+	#print(vars_in_scope)
 
 	#TODO: replace literal values in call_params with variable names
 	returnVar = genRandomVarName()
@@ -118,7 +118,7 @@ def func_def(line_num, def_found, read_data, funcs):
 
 	#print(body)
 
-	opt_body, _ = parser(f_code["fcode"], funcs, [], 0, def_found.group(1) + "\t") # We want to parse body of function recursively
+	opt_body, _, _ = parser(f_code["fcode"], funcs, [], 0, def_found.group(1) + "\t") # We want to parse body of function recursively
 								# Funcs we have already found will be available to funcs defined inside current function
 
 	return opt_body, line_num, funcs
@@ -157,12 +157,15 @@ def loops(line_num, loop_found, read_data, funcs, vars_in_scope):
 				line_num -= 1 # Corrective
 				break
 
-	opt_body, vars_in_scope = parser(body, funcs, vars_in_scope, 2, loop_found.group(1)+"\t") # We want to parse body of function recursively
+	opt_body, funcs, vars_in_scope = parser(body, funcs, vars_in_scope, 2, loop_found.group(1)+"\t") # We want to parse body of function recursively
 									# Set flag inner_loop to say 
 
 	return opt_body, line_num, vars_in_scope
 
-
+# NOTE ABOUT inner_loop
+# 0 = not in a loop
+# 1 = in a loop, but not the inner loop
+# 2 = in the inner loop
 def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_indentation = ""):
 	line_num = 0	#init counter
 	#funcs = {}	#init list for storing functions
@@ -184,6 +187,9 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 			opt_body, line_num, funcs = func_def(line_num, def_found, read_data, funcs)
 			
 			opt_code = opt_code + opt_body
+
+			print("VARSINSCOPE: ")
+			print(vars_in_scope)
 		elif for_loop_found or while_loop_found:
 
 			#print("FOUND A LOOP!")
@@ -203,6 +209,9 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 			opt_body, line_num, vars_in_scope = loops(line_num, loop_found, read_data, funcs, vars_in_scope)
 
 			opt_code = opt_code + opt_body
+
+			print("VARSINSCOPE: ")
+			print(vars_in_scope)
 		else:
 			print("HERE:" + read_data[line_num])
 			opt_code.append(read_data[line_num])
@@ -218,8 +227,6 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 	############################
 	# CODE HERE TO CATCH LOOPS # (assumes no function definition inside loops. FIX LATER)
 	############################
-	tab_counter = 0 
-	RHS = "0"
 	if(inner_loop == 2):
 		print("INNER LOOP")
 		#print (opt_code)
@@ -266,13 +273,13 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 					line_rewrite += line[i:]
 					break
 			inlined_code.append(line_rewrite)
-		return inlined_code, vars_in_scope
+		return inlined_code, funcs, vars_in_scope
 	else:
 		indented_opt_code = []
 		print("NOT INNER LOOP")
 		for line in opt_code:
 			indented_opt_code.append(scope_indentation + line)
-		return indented_opt_code, vars_in_scope
+		return indented_opt_code, funcs, vars_in_scope
 	
 
 def main():
@@ -284,7 +291,7 @@ def main():
 	#print (len(read_data))
 
 
-	opt_code, _ = parser(read_data) 
+	opt_code, _, _ = parser(read_data) 
 
 	#print(opt_code)
 	new_file = open('generated.py', 'w')
