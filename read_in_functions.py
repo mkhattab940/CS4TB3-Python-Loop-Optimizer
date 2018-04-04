@@ -3,6 +3,9 @@
 
 # For now assume no function definitions inside loops
 
+IDENTITY = 0; VARIABLE = 1; FCALL = 2; STRLIT = 3; NUMLIT = 4; EOL = 5; KEYWORD = 6; 
+LP = 7; RP = 8; ASSIGN = 9; OTHER = 10; COMMA = 11;
+
 keywords = [ "and",       "del",       "from",      "not",       "while",
 "as",        "elif",      "global",    "or",        "with",
 "assert",    "else",      "if",        "pass",      "yield",
@@ -17,7 +20,72 @@ import random
 
 genvarcnt = -1
 
+line2lex = ""
 lnidx = 0
+
+def loadLex(string):
+	global line2lex
+	global lnidx
+
+	line2lex = string
+	lnidx = 0
+
+def lex():
+	global lnidx
+
+	eol_found = re.search("^\s*(\n)", line2lex[lnidx:])
+	lp_found = re.search("^\s*(\()", line2lex[lnidx:])
+	rp_found = re.search("^\s*(\))", line2lex[lnidx:])
+	comma_found = re.search("^\s*(,))", line2lex[lnidx:])
+
+	if lnidx > 0:
+		assign_found = re.search("^\s*([^<>=!+\-*/%&|\^]=[^=]", line2lex[lnidx-1:])
+	else:
+		assign_found = False
+	ident_found = re.search("^\s*([A-Za-z_]\w*)", line2lex[lnidx:]) #match next identifier
+	
+	strlit_dq_found = re.search("^\s*(\".*\")", line2lex[lnidx:])
+	strlit_sq_found = re.search("^\s*('.*')", line2lex[lnidx:])
+	
+	numlit_found = re.search("^\s*(-?[0-9]+)", line2lex[lnidx:])
+	#numlit_found = re.search("^\s*(-?[0-9]*\.?[0-9]*[eE]?-?[0-9]*[jJ]?)", line2lex[lnidx:]) #always matches
+																					#check if contains digit later
+	if eol_found:
+		lnidx += eol_found.end()
+		return EOL, "\n"
+	
+	elif lp_found:
+		lnidx += lp_found.end()
+		return LP, "("
+	elif rp_found:
+		lnidx += rp_found.end()
+		return RP, "("
+	elif comma_found:
+		lnidx += comma_found.end()
+		return COMMA, ","
+	elif assign_found:
+		lnidx += assign_found.end()
+		return ASSIGN, "="
+
+	elif ident_found:
+		lnidx += ident_found.end()
+		if ident_found.group(1) in keywords:
+			return KEYWORD, ident_found.group(1)
+		else:
+			return IDENTITY, ident_found.group(1)
+	elif strlit_dq_found:
+		lnidx += strlit_dq_found.end()
+		return STRLIT, strlit_dq_found.group(1)
+	elif strlit_sq_found:
+		lnidx += strlit_sq_found.end()
+		return STRLIT, strlit_sq_found.group(1)
+	elif numlit_found:
+		lnidx += numlit_found.end()
+		return NUMLIT, numlit_found.group(1)
+	else:
+		lnidx += 1
+		return OTHER, line2lex[lnidx-1]
+
 
 def genRandomVarName():
 	global genvarcnt
@@ -203,8 +271,6 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 				loop_found = while_loop_found
 
 			opt_code.append(read_data[line_num][:-len(loop_found.group(2))-1] + "\n")
-			# print (len(first_line))
-			# print(first_line)
 
 			opt_body, line_num, vars_in_scope = loops(line_num, loop_found, read_data, funcs, vars_in_scope)
 
