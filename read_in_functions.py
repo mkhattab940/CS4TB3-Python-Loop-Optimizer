@@ -3,8 +3,6 @@
 
 # For now assume no function definitions inside loops
 
-VAR = 1; FUNCTION = 2; NEWLINE = 3; KEYWORD = 4; MISC = 4;
-
 keywords = [ "and",       "del",       "from",      "not",       "while",
 "as",        "elif",      "global",    "or",        "with",
 "assert",    "else",      "if",        "pass",      "yield",
@@ -15,6 +13,19 @@ keywords = [ "and",       "del",       "from",      "not",       "while",
 
 import sys
 import re
+import random
+
+def genRandomVarName():
+	varName = "Var_"
+	for i in range(5):
+		uppercase = random.randrange(2)
+		letter = random.randrange(26)
+		if uppercase:
+			varName += chr(65 + letter)
+		else:
+			varName += chr(97 + letter)
+	return varName + str(random.randrange(100))
+
 
 def replace_params(func_def, call_params, indentation):
 	fname = func_def["fname"]
@@ -22,7 +33,7 @@ def replace_params(func_def, call_params, indentation):
 	fcode = func_def["fcode"]
 
 	#TODO: replace literal values in call_params with variable names
-
+	returnVar = genRandomVarName()
 	fcode_inlined = []
 	for line in fcode:
 		i = 0
@@ -45,6 +56,8 @@ def replace_params(func_def, call_params, indentation):
 							line_inlined += ident
 					else:
 						line_inlined += ident
+				elif ident == "return":
+					line_inlined += returnVar + "="
 				else:
 					line_inlined += ident
 
@@ -53,7 +66,7 @@ def replace_params(func_def, call_params, indentation):
 				line_inlined += line[i:]
 				break
 		fcode_inlined.append(line_inlined)
-	return fcode_inlined
+	return fcode_inlined, returnVar
 
 
 def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
@@ -198,9 +211,9 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 							params_found = re.search("^(.*)\)", func_call_found.string[func_call_found.end():])
 							if funcs[ident]: # If this function is in funcs 
 								params = params_found.group(1).replace(" ","").replace("\t","").split(",")
-								inline_it = replace_params(funcs[ident], params, scope_indentation + indentation)
+								inline_it, returnVar = replace_params(funcs[ident], params, scope_indentation + indentation)
 								inlined_code = inlined_code + inline_it
-								line_rewrite += " X " #TODO: Generate var names
+								line_rewrite += returnVar
 							else:
 								line_rewrite += ident + "(" + params_found.group(1)
 							i = i + params_found.end() + func_call_found.end() + ident_found.end()
