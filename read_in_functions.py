@@ -80,11 +80,10 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 		#opt_code.append(read_data[line_num])
 
 		def_found = re.search("^(\t*)def\s+(\w+)\s*\((.*)\)\s*:\s*(.*)\n$", read_data[line_num])
-		for_loop_found = re.search("^(\t*)for\s*.*:\s*(.*)\n$", read_data[line_num])
-		while_loop_found = re.search("^(\t*)while\s*.*:\s*(.*)\n$", read_data[line_num])
+		for_loop_found = re.search("^(\t*)for\s+.*:\s*(.*)\n$", read_data[line_num])
+		while_loop_found = re.search("^(\t*)while\s+.*:\s*(.*)\n$", read_data[line_num])
 		
 		if def_found:
-			
 			#print("FOUND A DEF!!")
 			indent = len(def_found.group(1))
 			indentation = def_found.group(1)
@@ -95,7 +94,7 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 			opt_code.append(read_data[line_num][:-len(def_found.group(4))-1] + "\n")
 
 			if len(def_found.group(4)) > 0 and not re.match("^\s*$", def_found.group(4)):
-				body = [def_found.group(1) + "\t" + def_found.group(4)]
+				body = [def_found.group(1) + def_found.group(4) + "\n"]
 			else:
 				body = []
 				while line_num < len(read_data)-1:
@@ -111,10 +110,11 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 
 					if indent2 > indent: #All lines in the functions will be indented more than the function def line
 						indentless = re.match("^(\t*)(.*\n)$",read_data[line_num])
+						print("INDENTLESS: " + indentless.group(2))
 						tabs = ""
 						for i in range(indent2-indent-1):
 							tabs += "\t"
-						body.append(tabs + "\t" + indentless.group(2))
+						body.append(tabs + indentless.group(2))
 					else: # We are outside the function (i.e. done)
 						line_num -= 1 # Corrective
 						break
@@ -124,7 +124,7 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 
 			#print(body)
 
-			opt_body = parser(body, funcs, 0, indentation) # We want to parse body of function recursively
+			opt_body = parser(body, funcs, 0, indentation + "\t") # We want to parse body of function recursively
 								# Funcs we have already found will be available to funcs defined inside current function
 			opt_code = opt_code + opt_body
 		elif for_loop_found or while_loop_found:
@@ -147,7 +147,7 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 			# print (len(first_line))
 			# print(first_line)
 			if len(first_line) > 0 and not re.match("^\s*$", first_line):
-				body = [first_line]
+				body = [indentation + first_line + "\n"]
 			else:
 				body = []
 				while line_num < len(read_data)-1:
@@ -171,31 +171,29 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 						line_num -= 1 # Corrective
 						break
 
-			print(body)
-			opt_body = parser(body, funcs, 1, indentation) # We want to parse body of function recursively
+			#print(body)
+			opt_body = parser(body, funcs, 1, indentation+"\t") # We want to parse body of function recursively
 									# Set flag inner_loop to say 
 			opt_code = opt_code + opt_body
 		else:
+			print("HERE:" + read_data[line_num])
 			opt_code.append(read_data[line_num])
 		line_num += 1
 		
-	
+	print(opt_code)
 	############################
 	# CODE HERE TO CATCH LOOPS # (assumes no function definition inside loops. FIX LATER)
 	############################
-	#print("x =", opt_code)
-	#print(inner_loop)
-	#print("i am here")
 	tab_counter = 0 
 	RHS = "0"
 	if(inner_loop):
 		print("INNER LOOP")
-		print (opt_code)
-		print (funcs)
+		#print (opt_code)
+		#print (funcs)
 		inlined_code = []
 		for line in opt_code:
 			i = 0
-			line_rewrite = scope_indentation + "\t"
+			line_rewrite = scope_indentation
 			ident_match = re.search("^(\t*).*", line)
 			indentation = ident_match.group(1)
 			while i < len(line):
@@ -209,13 +207,13 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 						func_call_found = re.search("^\s*\(", ident_found.string[ident_found.end():])
 						if func_call_found: # This is a func call
 							params_found = re.search("^(.*)\)", func_call_found.string[func_call_found.end():])
-							if funcs[ident]: # If this function is in funcs 
+							if ident in funcs.keys(): # If this function is in funcs 
 								params = params_found.group(1).replace(" ","").replace("\t","").split(",")
 								inline_it, returnVar = replace_params(funcs[ident], params, scope_indentation + indentation)
 								inlined_code = inlined_code + inline_it
 								line_rewrite += returnVar
 							else:
-								line_rewrite += ident + "(" + params_found.group(1)
+								line_rewrite += ident + "(" + params_found.group(1) + ")"
 							i = i + params_found.end() + func_call_found.end() + ident_found.end()
 						else:
 							line_rewrite += ident
@@ -231,8 +229,11 @@ def parser(read_data, funcs = {}, inner_loop = 0, scope_indentation = ""):
 		return inlined_code
 
 	else:
-		print("N")
-		return opt_code
+		indented_opt_code = []
+		print("NOT INNER LOOP")
+		for line in opt_code:
+			indented_opt_code.append(scope_indentation + line)
+		return indented_opt_code
 	
 
 def main():
@@ -246,10 +247,10 @@ def main():
 
 	opt_code = parser(read_data) 
 
-	#print(funcs)
+	print(opt_code)
 	new_file = open('generated.py', 'w')
 	for item in opt_code:
-		print(opt_code)
+		#print(opt_code)
 		new_file.write(item)
 
 
