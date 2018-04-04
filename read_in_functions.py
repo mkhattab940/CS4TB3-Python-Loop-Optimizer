@@ -114,9 +114,16 @@ def func_def(line_num, def_found, read_data, funcs):
 
 	f_code = {"fname": fname, "params": params, "fcode": body}
 
-	return f_code, line_num
+	funcs[fname] = f_code
 
-def loops(line_num, loop_found, read_data, funcs):
+	#print(body)
+
+	opt_body, _ = parser(f_code["fcode"], funcs, [], 0, def_found.group(1) + "\t") # We want to parse body of function recursively
+								# Funcs we have already found will be available to funcs defined inside current function
+
+	return opt_body, line_num, funcs
+
+def loops(line_num, loop_found, read_data, funcs, vars_in_scope):
 	#print("FOUND A LOOP!")
 	#print(read_data[line_num])
 
@@ -150,7 +157,10 @@ def loops(line_num, loop_found, read_data, funcs):
 				line_num -= 1 # Corrective
 				break
 
-	return body, line_num
+	opt_body, vars_in_scope = parser(body, funcs, vars_in_scope, 2, loop_found.group(1)+"\t") # We want to parse body of function recursively
+									# Set flag inner_loop to say 
+
+	return opt_body, line_num, vars_in_scope
 
 
 def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_indentation = ""):
@@ -170,19 +180,16 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 		if def_found:
 
 			opt_code.append(read_data[line_num][:-len(def_found.group(4))-1] + "\n")
-			f_code, line_num = func_def(line_num, def_found, read_data, funcs)
-			funcs[f_code["fname"]] = f_code
-
-			#print(body)
-
-			opt_body = parser(f_code["fcode"], funcs, vars_in_scope, 0, def_found.group(1) + "\t") # We want to parse body of function recursively
-								# Funcs we have already found will be available to funcs defined inside current function
+			
+			opt_body, line_num, funcs = func_def(line_num, def_found, read_data, funcs)
+			
 			opt_code = opt_code + opt_body
 		elif for_loop_found or while_loop_found:
 
 			#print("FOUND A LOOP!")
 			#print(read_data[line_num])
-			inner_loop = 0 # If we just found a loop, this can't the body of an inner loop
+			if inner_loop == 2:
+				inner_loop = 1 # If we just found a loop, this can't the body of an inner loop
 
 			if for_loop_found:
 				loop_found = for_loop_found
@@ -193,10 +200,8 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 			# print (len(first_line))
 			# print(first_line)
 
-			body, line_num = loops(line_num, loop_found, read_data, funcs)
+			opt_body, line_num, vars_in_scope = loops(line_num, loop_found, read_data, funcs, vars_in_scope)
 
-			opt_body = parser(body, funcs, vars_in_scope, 1, loop_found.group(1)+"\t") # We want to parse body of function recursively
-									# Set flag inner_loop to say 
 			opt_code = opt_code + opt_body
 		else:
 			print("HERE:" + read_data[line_num])
@@ -215,7 +220,7 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 	############################
 	tab_counter = 0 
 	RHS = "0"
-	if(inner_loop):
+	if(inner_loop == 2):
 		print("INNER LOOP")
 		#print (opt_code)
 		#print (funcs)
@@ -261,14 +266,13 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 					line_rewrite += line[i:]
 					break
 			inlined_code.append(line_rewrite)
-		return inlined_code
-
+		return inlined_code, vars_in_scope
 	else:
 		indented_opt_code = []
 		print("NOT INNER LOOP")
 		for line in opt_code:
 			indented_opt_code.append(scope_indentation + line)
-		return indented_opt_code
+		return indented_opt_code, vars_in_scope
 	
 
 def main():
@@ -280,7 +284,7 @@ def main():
 	#print (len(read_data))
 
 
-	opt_code = parser(read_data) 
+	opt_code, _ = parser(read_data) 
 
 	#print(opt_code)
 	new_file = open('generated.py', 'w')
