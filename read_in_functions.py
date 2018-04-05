@@ -4,7 +4,7 @@
 # For now assume no function definitions inside loops
 
 IDENTITY = 0; VARIABLE = 1; FCALL = 2; STRLIT = 3; NUMLIT = 4; EOL = 5; KEYWORD = 6; 
-LP = 7; RP = 8; ASSIGN = 9; OTHER = 10; COMMA = 11;
+LP = 7; RP = 8; ASSIGN = 9; OTHER = 10; COMMA = 11; COLON = 12;
 
 keywords = [ "and",       "del",       "from",      "not",       "while",
 "as",        "elif",      "global",    "or",        "with",
@@ -37,6 +37,7 @@ def lex():
 	lp_found = re.search("^\s*(\()", line2lex[lnidx:])
 	rp_found = re.search("^\s*(\))", line2lex[lnidx:])
 	comma_found = re.search("^\s*(,)", line2lex[lnidx:])
+	colon_found = re.search("^\s*(:)", line2lex[lnidx:])
 
 	if lnidx > 0:
 		assign_found = re.search("^\s*([^<>=!+\-*/%&|\^]=[^=])", line2lex[lnidx-1:])
@@ -63,6 +64,9 @@ def lex():
 	elif comma_found:
 		lnidx += comma_found.end()
 		return COMMA, ","
+	elif colon_found:
+		lnidx += colon_found.end()
+		return COLON, ":"
 	elif assign_found:
 		lnidx += assign_found.end()
 		return ASSIGN, "="
@@ -148,23 +152,30 @@ def replace_params(func_def, call_params, indentation, vars_in_scope):
 	return fcode_inlined, returnVar
 
 
-def func_def(line_num, def_found, read_data, funcs):
-	#print("FOUND A DEF!!")
+def func_def(line_num, read_data, funcs):
+
+	def_found = re.search("^(\t*)def\s+(\w+)\s*\((.*)\)\s*:\s*(.*)\n$", read_data[line_num])
+	print("FOUND A DEF!!")
 	indent = len(def_found.group(1))
 	fname = def_found.group(2)
-	params = def_found.group(3).replace(" ","").replace("\t","").split(",")
+	params_plus = def_found.group(3).replace(" ","").replace("\t","").split(",")
+	func_head = read_data[line_num][:-len(def_found.group(4))-1] + "\n"
+
+	params = []
+	if params_plus[0] != '':
+		#print(params_plus)
+		for param in params_plus:
+			loadLex(param)
+			_, idty = lex()
+			params.append(idty)
+
 	#print(len(def_found.group(4)))
 	if len(def_found.group(4)) > 0 and not re.match("^\s*$", def_found.group(4)):
 		body = [def_found.group(1) + def_found.group(4) + "\n"]
 	else:
 		body = []
 		while line_num < len(read_data)-1:
-			line_num += 1
-			#print(read_data[line_num])
-			if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
-				continue
-			if re.match("^\s*#.*$", read_data[line_num]): #Skip comment lines
-				continue	
+			line_num += 1	
 			
 			m2 = re.search("^(\t*).*$",read_data[line_num])
 			indent2 = len(m2.group(1))
@@ -184,19 +195,27 @@ def func_def(line_num, def_found, read_data, funcs):
 
 	funcs[fname] = f_code
 
-	#print(body)
-
-	opt_body, _, _ = parser(f_code["fcode"], funcs, [], 0, def_found.group(1) + "\t") # We want to parse body of function recursively
+	opt_body, _ = parser(f_code["fcode"], funcs, [], 0, def_found.group(1) + "\t") # We want to parse body of function recursively
 								# Funcs we have already found will be available to funcs defined inside current function
+	opt_code = [func_head] + opt_body
+	return opt_code, line_num, funcs
 
-	return opt_body, line_num, funcs
-
-def loops(line_num, loop_found, read_data, funcs, vars_in_scope):
-	#print("FOUND A LOOP!")
+def loops(line_num, read_data, funcs, vars_in_scope):
+	print("FOUND A LOOP!")
 	#print(read_data[line_num])
+
+	for_loop_found = re.search("^(\t*)for\s+.*:\s*(.*)\n$", read_data[line_num])
+	while_loop_found = re.search("^(\t*)while\s+.*:\s*(.*)\n$", read_data[line_num])
+
+	if for_loop_found:
+		loop_found = for_loop_found
+	else:
+		loop_found = while_loop_found
 
 	indent = len(loop_found.group(1))
 	first_line = loop_found.group(2)
+
+	loop_head = read_data[line_num][:-len(loop_found.group(2))-1] + "\n"
 
 	# print (len(first_line))
 	# print(first_line)
@@ -207,11 +226,7 @@ def loops(line_num, loop_found, read_data, funcs, vars_in_scope):
 		while line_num < len(read_data)-1:
 			line_num += 1
 			#print(read_data[line_num])
-			if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
-				continue
-			if re.match("^\s*#.*$", read_data[line_num]): #Skip comment lines
-				continue	
-			
+
 			m2 = re.search("^(\t*).*$",read_data[line_num])
 			indent2 = len(m2.group(1))
 
@@ -225,10 +240,10 @@ def loops(line_num, loop_found, read_data, funcs, vars_in_scope):
 				line_num -= 1 # Corrective
 				break
 
-	opt_body, funcs, vars_in_scope = parser(body, funcs, vars_in_scope, 2, loop_found.group(1)+"\t") # We want to parse body of function recursively
+	opt_body, vars_in_scope = parser(body, funcs, vars_in_scope, 2, loop_found.group(1)+"\t") # We want to parse body of function recursively
 									# Set flag inner_loop to say 
-
-	return opt_body, line_num, vars_in_scope
+	opt_code = [loop_head] + opt_body
+	return opt_code, line_num, vars_in_scope
 
 # NOTE ABOUT inner_loop
 # 0 = not in a loop
@@ -242,55 +257,55 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 
 	while line_num < len(read_data):
 
+		if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
+			line_num += 1
+			continue
+		#Clean out comments
+		if re.match("^\s*#.*$", read_data[line_num]): #Skip comment lines
+			line_num += 1
+			continue	
+		comment_found = re.search("^(.*)\s*#.*", read_data[line_num])
+		if comment_found:	
+			read_data[line_num] = comment_found.group(1) + "\n"
+
+
 		#opt_code.append(read_data[line_num])
+		loadLex(read_data[line_num])
+		token, text = lex()
 
-		def_found = re.search("^(\t*)def\s+(\w+)\s*\((.*)\)\s*:\s*(.*)\n$", read_data[line_num])
-		for_loop_found = re.search("^(\t*)for\s+.*:\s*(.*)\n$", read_data[line_num])
-		while_loop_found = re.search("^(\t*)while\s+.*:\s*(.*)\n$", read_data[line_num])
-		
-		if def_found:
+		if token == KEYWORD:
+			if text == "def":
+				opt_body, line_num, funcs = func_def(line_num, read_data, funcs)
+				opt_code = opt_code + opt_body
 
-			opt_code.append(read_data[line_num][:-len(def_found.group(4))-1] + "\n")
-			
-			opt_body, line_num, funcs = func_def(line_num, def_found, read_data, funcs)
-			
-			opt_code = opt_code + opt_body
+				print("VARSINSCOPE: ")
+				print(vars_in_scope)
+			if text == "for" or text == "while":
+				if inner_loop == 2:
+					inner_loop = 1 # If we just found a loop, this can't the body of an inner loop
 
-			print("VARSINSCOPE: ")
-			print(vars_in_scope)
-		elif for_loop_found or while_loop_found:
+				opt_body, line_num, vars_in_scope = loops(line_num, read_data, funcs, vars_in_scope)
 
-			#print("FOUND A LOOP!")
-			#print(read_data[line_num])
-			if inner_loop == 2:
-				inner_loop = 1 # If we just found a loop, this can't the body of an inner loop
+				opt_code = opt_code + opt_body
 
-			if for_loop_found:
-				loop_found = for_loop_found
-			else:
-				loop_found = while_loop_found
+				print("VARSINSCOPE: ")
+				print(vars_in_scope)
 
-			opt_code.append(read_data[line_num][:-len(loop_found.group(2))-1] + "\n")
-
-			opt_body, line_num, vars_in_scope = loops(line_num, loop_found, read_data, funcs, vars_in_scope)
-
-			opt_code = opt_code + opt_body
-
-			print("VARSINSCOPE: ")
-			print(vars_in_scope)
-		else:
-			print("HERE:" + read_data[line_num])
-			opt_code.append(read_data[line_num])
-			# Keep a dictionary of variables in this scope
-			loadLex(read_data[line_num])
-
-			new_ids = []
-			token, text = lex()
-			g = 0;
-			if (token == KEYWORD and text == "global"):
+			if text == "global":
+				opt_code.append(read_data[line_num])
+				new_ids = []
 				token, text = lex()
-				g = 1
-
+				while token == IDENTITY:
+					new_ids.append(text)
+					token, _ = lex()
+					if token == COMMA:
+						token, text = lex()
+					elif token == EOL:
+						vars_in_scope = vars_in_scope + new_ids
+						break
+		elif token == IDENTITY:
+			opt_code.append(read_data[line_num])
+			new_ids = []
 			while token == IDENTITY:
 				new_ids.append(text)
 				token, _ = lex()
@@ -299,16 +314,6 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 				elif token == ASSIGN:
 					vars_in_scope = vars_in_scope + new_ids
 					break
-				else:
-					if g:
-						vars_in_scope = vars_in_scope + new_ids
-					break
-			
-
-			# assign_found = re.search("^\t*(.*)=.*$", read_data[line_num])
-			# if assign_found:
-			# 	vars_assigned = assign_found.group(1).replace(" ","").replace("\t","").split(",")
-			# 	vars_in_scope = vars_in_scope + vars_assigned
 
 		line_num += 1
 		
@@ -362,13 +367,13 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 					line_rewrite += line[i:]
 					break
 			inlined_code.append(line_rewrite)
-		return inlined_code, funcs, vars_in_scope
+		return inlined_code, vars_in_scope
 	else:
 		indented_opt_code = []
 		print("NOT INNER LOOP")
 		for line in opt_code:
 			indented_opt_code.append(scope_indentation + line)
-		return indented_opt_code, funcs, vars_in_scope
+		return indented_opt_code, vars_in_scope
 	
 
 def main():
@@ -380,7 +385,7 @@ def main():
 	#print (len(read_data))
 
 
-	opt_code, _, _ = parser(read_data) 
+	opt_code, _ = parser(read_data) 
 
 	#print(opt_code)
 	new_file = open('generated.py', 'w')
