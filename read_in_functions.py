@@ -4,7 +4,7 @@
 # For now assume no function definitions inside loops
 
 IDENTITY = 0; VARIABLE = 1; FCALL = 2; STRLIT = 3; NUMLIT = 4; EOL = 5; KEYWORD = 6; 
-LP = 7; RP = 8; ASSIGN = 9; OTHER = 10; COMMA = 11; COLON = 12;
+LP = 7; RP = 8; ASSIGN = 9; OTHER = 10; COMMA = 11; COLON = 12; LB = 13; RB = 14;
 
 keywords = [ "and",       "del",       "from",      "not",       "while",
 "as",        "elif",      "global",    "or",        "with",
@@ -22,6 +22,8 @@ genvarcnt = -1
 
 line2lex = ""
 lnidx = 0
+token = 0
+text = ""
 
 def loadLex(string):
 	global line2lex
@@ -32,10 +34,14 @@ def loadLex(string):
 
 def lex():
 	global lnidx
+	global token
+	global text
 
 	eol_found = re.search("^\s*(\n)", line2lex[lnidx:])
 	lp_found = re.search("^\s*(\()", line2lex[lnidx:])
 	rp_found = re.search("^\s*(\))", line2lex[lnidx:])
+	lb_found = re.search("^\s*(\[)", line2lex[lnidx:])
+	rb_found = re.search("^\s*(\])", line2lex[lnidx:])
 	comma_found = re.search("^\s*(,)", line2lex[lnidx:])
 	colon_found = re.search("^\s*(:)", line2lex[lnidx:])
 
@@ -53,43 +59,71 @@ def lex():
 																					#check if contains digit later
 	if eol_found:
 		lnidx += eol_found.end()
-		return EOL, "\n"
+		token, text = EOL, "\n"
 	
 	elif lp_found:
 		lnidx += lp_found.end()
-		return LP, "("
+		token, text = LP, "("
 	elif rp_found:
 		lnidx += rp_found.end()
-		return RP, "("
+		token, text = RP, "("
+	elif lb_found:
+		lnidx += lb_found.end()
+		token, text = LB, "["
+	elif rb_found:
+		lnidx += rb_found.end()
+		token, text = RB, "]"
 	elif comma_found:
 		lnidx += comma_found.end()
-		return COMMA, ","
+		token, text = COMMA, ","
 	elif colon_found:
 		lnidx += colon_found.end()
-		return COLON, ":"
+		token, text = COLON, ":"
 	elif assign_found:
 		lnidx += assign_found.end()
-		return ASSIGN, "="
+		token, text = ASSIGN, "="
 
 	elif ident_found:
 		lnidx += ident_found.end()
 		if ident_found.group(1) in keywords:
-			return KEYWORD, ident_found.group(1)
+			token, text = KEYWORD, ident_found.group(1)
 		else:
-			return IDENTITY, ident_found.group(1)
+			token, text = IDENTITY, ident_found.group(1)
 	elif strlit_dq_found:
 		lnidx += strlit_dq_found.end()
-		return STRLIT, strlit_dq_found.group(1)
+		token, text = STRLIT, strlit_dq_found.group(1)
 	elif strlit_sq_found:
 		lnidx += strlit_sq_found.end()
-		return STRLIT, strlit_sq_found.group(1)
+		token, text = STRLIT, strlit_sq_found.group(1)
 	elif numlit_found:
 		lnidx += numlit_found.end()
-		return NUMLIT, numlit_found.group(1)
+		token, text = NUMLIT, numlit_found.group(1)
 	else:
 		lnidx += 1
-		return OTHER, line2lex[lnidx-1]
+		token, text = OTHER, line2lex[lnidx-1]
 
+# target_list     ::=  target ("," target)* [","]
+def Target_List():
+	ids = Target()
+	while True:
+		if token == COMMA:
+			lex()
+			ids +=  Target()
+		else:
+			break
+	return ids
+
+	
+# target          ::=  identifier
+#                      | "(" target_list ")"
+#                      | "[" [target_list] "]"
+def Target():
+	if token == LP or token == LB:
+		lex()
+		targets = Target_List()
+	elif token == IDENTITY:
+		lex()
+		return [text]
 
 def genRandomVarName():
 	global genvarcnt
@@ -166,8 +200,8 @@ def func_def(line_num, read_data, funcs):
 		#print(params_plus)
 		for param in params_plus:
 			loadLex(param)
-			_, idty = lex()
-			params.append(idty)
+			lex()
+			params.append(text)
 
 	#print(len(def_found.group(4)))
 	if len(def_found.group(4)) > 0 and not re.match("^\s*$", def_found.group(4)):
@@ -195,7 +229,7 @@ def func_def(line_num, read_data, funcs):
 
 	funcs[fname] = f_code
 
-	opt_body, _ = parser(f_code["fcode"], funcs, [], 0, def_found.group(1) + "\t") # We want to parse body of function recursively
+	opt_body, _ = parser(f_code["fcode"], funcs, params, 0, def_found.group(1) + "\t") # We want to parse body of function recursively
 								# Funcs we have already found will be available to funcs defined inside current function
 	opt_code = [func_head] + opt_body
 	return opt_code, line_num, funcs
@@ -209,6 +243,9 @@ def loops(line_num, read_data, funcs, vars_in_scope):
 
 	if for_loop_found:
 		loop_found = for_loop_found
+		lex()
+		vars_in_scope += Target_List()
+
 	else:
 		loop_found = while_loop_found
 
@@ -271,7 +308,7 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 
 		#opt_code.append(read_data[line_num])
 		loadLex(read_data[line_num])
-		token, text = lex()
+		lex()
 
 		if token == KEYWORD:
 			if text == "def":
@@ -280,7 +317,7 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 
 				print("VARSINSCOPE: ")
 				print(vars_in_scope)
-			if text == "for" or text == "while":
+			elif text == "for" or text == "while":
 				if inner_loop == 2:
 					inner_loop = 1 # If we just found a loop, this can't the body of an inner loop
 
@@ -291,29 +328,19 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 				print("VARSINSCOPE: ")
 				print(vars_in_scope)
 
-			if text == "global":
+			elif text == "global":
 				opt_code.append(read_data[line_num])
-				new_ids = []
-				token, text = lex()
-				while token == IDENTITY:
-					new_ids.append(text)
-					token, _ = lex()
-					if token == COMMA:
-						token, text = lex()
-					elif token == EOL:
-						vars_in_scope = vars_in_scope + new_ids
-						break
+				lex()
+				vars_in_scope += Target_List()
+			else:
+				opt_code.append(read_data[line_num])
 		elif token == IDENTITY:
 			opt_code.append(read_data[line_num])
-			new_ids = []
-			while token == IDENTITY:
-				new_ids.append(text)
-				token, _ = lex()
-				if token == COMMA:
-					token, text = lex()
-				elif token == ASSIGN:
-					vars_in_scope = vars_in_scope + new_ids
-					break
+			new_ids = Target_List()
+			if token == ASSIGN:
+				vars_in_scope = vars_in_scope + new_ids
+		else:
+			opt_code.append(read_data[line_num])
 
 		line_num += 1
 		
