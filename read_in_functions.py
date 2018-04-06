@@ -15,7 +15,7 @@ LP = 7; RP = 8; ASSIGN = 9; OTHER = 10; COMMA = 11; COLON = 12; LB = 13; RB = 14
 keywords = [ "and",       "del",       "from",      "not",       "while",
 "as",        "elif",      "global",    "or",        "with",
 "assert",    "else",      "if",        "pass",      "yield",
-"break",     "except",    "import",    "#print",		"True",		 "False",
+"break",     "except",    "import",    "#print",	"True",		 "False",
 "class",     "exec",      "in",        "raise",
 "continue",  "finally",   "is",        "return",
 "def",       "for",       "lambda",    "try" ]
@@ -195,12 +195,14 @@ def Target():
 
 def replace_params(func_def, call_params, indentation, vars_in_scope):
 	stashLex()
-
+	
+	#print(call_params)
 	fname = func_def["fname"]
 	fparams = func_def["params"]
 	fcode = func_def["fcode"]
 	fvars = func_def["fvars"]
-
+	print("INLINING: " + fname)
+	print(func_def["fcode"])
 	returnVar = genRandomVarName()
 	fcode_inlined = []
 	for line in fcode:
@@ -226,7 +228,8 @@ def replace_params(func_def, call_params, indentation, vars_in_scope):
 					if (ident in vars_in_scope or ident in call_params) and ident not in fparams:
 						fparams.append(ident)
 						call_params.append(genRandomVarName())
-
+					print(func_def)
+					print(call_params)
 					if ident in fparams:
 						line_inlined += call_params[fparams.index(ident)] + " " + text + wspace
 					elif ident in vars_in_scope: 
@@ -238,12 +241,16 @@ def replace_params(func_def, call_params, indentation, vars_in_scope):
 			elif token == KEYWORD:
 				print("KEYWORD: " + text)
 				if text == "return":
+					print("HELLO HI" + returnVar)
+					print(line_inlined)
 					line_inlined += returnVar + " = "
+					print(line_inlined)
 				else:
 					line_inlined += text + " "
 			else:
 				print("MISC: " + text)
 				line_inlined += text
+		print(line_inlined)
 		fcode_inlined.append(line_inlined + "\n")
 	restoreLex()
 	return fcode_inlined, returnVar
@@ -296,6 +303,8 @@ def func_def(line_num, read_data, funcs):
 								# Funcs we have already found will be available to funcs defined inside current function
 	opt_code = [func_head] + opt_body
 	funcs[fname]["fvars"] = fvars
+	print("THE CAPTURE")
+	print(f_code)
 	return opt_code, line_num, funcs
 
 def loops(line_num, read_data, funcs, vars_in_scope):
@@ -416,9 +425,6 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 	# CODE HERE TO CATCH LOOPS # (assumes no function definition inside loops. FIX LATER)
 	############################
 	if(inner_loop == 2):
-		#print("INNER LOOP")
-		##print (opt_code)
-		##print (funcs)
 		inlined_code = []
 		for line in opt_code:
 
@@ -430,18 +436,16 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 
 			params_found = []
 			loadLex(line)
-			#print(line)
+
 			while True:
 				lex()
 				if token == EOL:
 					break
 				elif token == IDENTITY:
-					#print("ID: " + text)
 					the_id = text
 					lex()
 					after_id = text
 					if token == LP:
-						#print("LP")
 						params_found = []
 						lit_to_var = []
 						old_params = ""
@@ -464,26 +468,22 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 							inlined_code = inlined_code + inline_it
 							line_rewrite += returnVar + " "
 						else:
-							#print ("This one")
 							line_rewrite += the_id + "(" + old_params + ")"
 					elif token == EOL:
+						line_rewrite += the_id + " "
 						break
 					else:
-						#print("NOT RP")
-						#print(text)
 						line_rewrite += the_id + " " + after_id
 				elif token == KEYWORD:
 					line_rewrite += text + " "
 				else:
 					line_rewrite += text
-				#print(line_rewrite)
-
+				print line_rewrite
 			inlined_code.append(line_rewrite + "\n")
 
 		return inlined_code, vars_in_scope
 	else:
 		indented_opt_code = []
-		#print("NOT INNER LOOP")
 		for line in opt_code:
 			indented_opt_code.append(scope_indentation + line)
 		return indented_opt_code, vars_in_scope
@@ -491,17 +491,18 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 
 def main():
 	filename = sys.argv[1]
+	if len(sys.argv) > 2:
+		outputfile = sys.argv[2]
+	else:
+		outputfile = filename[:-3] + '_opt.py'
 	with open(filename, 'r') as f:
 		read_data = f.readlines()
-
-	##print(read_data)
-	##print (len(read_data))
-
+	print outputfile
 
 	opt_code, _ = parser(read_data) 
 
 	##print(opt_code)
-	new_file = open('generated.py', 'w')
+	new_file = open(outputfile, 'w')
 	for item in opt_code:
 		##print(opt_code)
 		new_file.write(item)
