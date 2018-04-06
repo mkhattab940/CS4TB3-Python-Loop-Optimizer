@@ -37,6 +37,10 @@ def lex():
 	global token
 	global text
 
+	if lnidx >= len(line2lex):
+		token, text = EOL, "\n"
+		return
+
 	eol_found = re.search("^\s*(\n)", line2lex[lnidx:])
 	lp_found = re.search("^\s*(\()", line2lex[lnidx:])
 	rp_found = re.search("^\s*(\))", line2lex[lnidx:])
@@ -46,10 +50,10 @@ def lex():
 	colon_found = re.search("^\s*(:)", line2lex[lnidx:])
 
 	if lnidx > 0:
-		assign_found = re.search("^\s*([^<>=!+\-*/%&|\^]=[^=])", line2lex[lnidx-1:])
+		assign_found = re.search("^\s*(=)", line2lex[lnidx:])
 	else:
 		assign_found = False
-	ident_found = re.search("^\s*([A-Za-z_]\w*)", line2lex[lnidx:]) #match next identifier
+	ident_found = re.search("^\s*([A-Za-z_][\w]*)", line2lex[lnidx:]) #match next identifier
 	
 	strlit_dq_found = re.search("^\s*(\".*\")", line2lex[lnidx:])
 	strlit_sq_found = re.search("^\s*('.*')", line2lex[lnidx:])
@@ -58,6 +62,7 @@ def lex():
 	#numlit_found = re.search("^\s*(-?[0-9]*\.?[0-9]*[eE]?-?[0-9]*[jJ]?)", line2lex[lnidx:]) #always matches
 																					#check if contains digit later
 	if eol_found:
+		print("HEYHEYE")
 		lnidx += eol_found.end()
 		token, text = EOL, "\n"
 	
@@ -66,7 +71,7 @@ def lex():
 		token, text = LP, "("
 	elif rp_found:
 		lnidx += rp_found.end()
-		token, text = RP, "("
+		token, text = RP, ")"
 	elif lb_found:
 		lnidx += lb_found.end()
 		token, text = LB, "["
@@ -80,9 +85,15 @@ def lex():
 		lnidx += colon_found.end()
 		token, text = COLON, ":"
 	elif assign_found:
+		if line2lex[lnidx+assign_found.start()-1] not in "<>=!+\-*/%&|\^":
+			if line2lex[lnidx+assign_found.end()] != '=':
+				print("ASSIGN!")
+				token, text = ASSIGN, "="
+			else:
+				token, text = OTHER, "="
+		else:
+			token, text = OTHER, "="
 		lnidx += assign_found.end()
-		token, text = ASSIGN, "="
-
 	elif ident_found:
 		lnidx += ident_found.end()
 		if ident_found.group(1) in keywords:
@@ -99,6 +110,8 @@ def lex():
 		lnidx += numlit_found.end()
 		token, text = NUMLIT, numlit_found.group(1)
 	else:
+		print(len(line2lex))
+		print(lnidx)
 		lnidx += 1
 		token, text = OTHER, line2lex[lnidx-1]
 
@@ -111,6 +124,8 @@ def Target_List():
 			ids +=  Target()
 		else:
 			break
+	print("HERE ARE SOME IDS: ")
+	print(ids)
 	return ids
 
 	
@@ -122,8 +137,9 @@ def Target():
 		lex()
 		targets = Target_List()
 	elif token == IDENTITY:
+		idty = text
 		lex()
-		return [text]
+		return [idty]
 
 def genRandomVarName():
 	global genvarcnt
@@ -332,13 +348,16 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 				opt_code.append(read_data[line_num])
 				lex()
 				vars_in_scope += Target_List()
+				vars_in_scope = list(set(vars_in_scope))
 			else:
 				opt_code.append(read_data[line_num])
 		elif token == IDENTITY:
+			print("This line starts with an id!")
 			opt_code.append(read_data[line_num])
 			new_ids = Target_List()
 			if token == ASSIGN:
 				vars_in_scope = vars_in_scope + new_ids
+				vars_in_scope = list(set(vars_in_scope))
 		else:
 			opt_code.append(read_data[line_num])
 
@@ -354,46 +373,66 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 		#print (funcs)
 		inlined_code = []
 		for line in opt_code:
+
+			indent_match = re.search("^(\t*).*", line)
+			indentation = indent_match.group(1)
+
 			i = 0
-			line_rewrite = scope_indentation
-			ident_match = re.search("^(\t*).*", line)
-			indentation = ident_match.group(1)
-			while i < len(line):
-				print("hurr")
-				ident_found = re.search("[A-Za-z_]\w*", line[i:]) #match next identifier
-				if ident_found:
-					line_rewrite += ident_found.string[:ident_found.start()] #Add chars not associated with identifiers
-					
-					ident = ident_found.string[ident_found.start():ident_found.end()]
-					if ident not in keywords: # Make sure we're not dealing with a keyword
-						func_call_found = re.search("^\s*\(", ident_found.string[ident_found.end():])
-						if func_call_found: # This is a func call
-							params_found = re.search("^(.*)\)", func_call_found.string[func_call_found.end():])
-							if params_found:
-								params = params_found.group(1).replace(" ","").replace("\t","").split(",")
-								params_end = params_found.end()
-							else:
-								params = ""
-								params_end = 1
-							if ident in funcs.keys(): # If this function is in funcs 
+			line_rewrite = scope_indentation + indentation
 
-								inline_it, returnVar = replace_params(funcs[ident], params, scope_indentation + indentation, vars_in_scope)
-								inlined_code = inlined_code + inline_it
-								line_rewrite += returnVar
-							else:
-								line_rewrite += ident + "(" + params_found.group(1) + ")"
-							i = i + params_end + func_call_found.end() + ident_found.end()
-						else:
-							line_rewrite += ident
-							i = i + ident_found.end()
-					else:
-						line_rewrite += ident
-						i = i + ident_found.end()
-
-				else:
-					line_rewrite += line[i:]
+			params_found = []
+			loadLex(line)
+			print(line)
+			while True:
+				lex()
+				if token == EOL:
+					print("EOL1")
 					break
-			inlined_code.append(line_rewrite)
+				elif token == IDENTITY:
+					print("ID: " + text)
+					the_id = text
+					lex()
+					after_id = text
+					if token == LP:
+						print("LP")
+						params_found = []
+						lit_to_var = []
+						old_params = ""
+						while token != RP:
+							lex()
+							if token == IDENTITY:
+								params_found.append(text)
+							elif token == STRLIT or token == NUMLIT:
+								varName = genRandomVarName()
+								params_found.append(varName)
+								lit_to_var.append(scope_indentation + indentation + varName + " = " + text + "\n")
+							elif token == RP:
+								break
+							old_params += text
+
+						if the_id in funcs.keys():
+							print("func defined")
+							inlined_code += lit_to_var
+							inline_it, returnVar = replace_params(funcs[the_id], params_found, scope_indentation + indentation, vars_in_scope)
+							inlined_code = inlined_code + inline_it
+							line_rewrite += returnVar + " "
+						else:
+							print ("This one")
+							line_rewrite += the_id + "(" + old_params + ")"
+					elif token == EOL:
+						break
+					else:
+						print("NOT RP")
+						print(text)
+						line_rewrite += the_id + " " + after_id
+				elif token == KEYWORD:
+					line_rewrite += text + " "
+				else:
+					line_rewrite += text
+				print(line_rewrite)
+
+			inlined_code.append(line_rewrite + "\n")
+			
 		return inlined_code, vars_in_scope
 	else:
 		indented_opt_code = []
