@@ -10,6 +10,7 @@ import random
 # TOKENS
 IDENTITY = 0; VARIABLE = 1; FCALL = 2; STRLIT = 3; NUMLIT = 4; EOL = 5; KEYWORD = 6; 
 LP = 7; RP = 8; ASSIGN = 9; OTHER = 10; COMMA = 11; COLON = 12; LB = 13; RB = 14;
+BOOLLIT = 15;
 
 
 keywords = [ "and",       "del",       "from",      "not",       "while",
@@ -33,6 +34,7 @@ s_lnidx = 0
 s_token = 0
 s_text = ""
 
+# Function to generate new variable names.
 def genRandomVarName():
 	global genvarcnt
 	varName = "Var_"
@@ -98,6 +100,8 @@ def lex():
 	rb_found = re.search("^\s*(\])", line2lex[lnidx:])
 	comma_found = re.search("^\s*(,)", line2lex[lnidx:])
 	colon_found = re.search("^\s*(:)", line2lex[lnidx:])
+	true_found = re.search("^\s*True[^\w]", line2lex[lnidx:])
+	false_found = re.search("^\s*False[^\w]", line2lex[lnidx:])
 
 	if lnidx > 0:
 		assign_found = re.search("^\s*(=)", line2lex[lnidx:])
@@ -159,9 +163,11 @@ def lex():
 	elif numlit_found:
 		lnidx += numlit_found.end()
 		token, text = NUMLIT, numlit_found.group(1)
+	elif true_found:
+		token, text = BOOLLIT, "True"
+	elif false_found:
+		token, text = BOOLLIT, "False"
 	else:
-		#print(len(line2lex))
-		#print(lnidx)
 		lnidx += 1
 		token, text = OTHER, line2lex[lnidx-1]
 
@@ -192,54 +198,65 @@ def Target():
 		lex()
 		return [idty]
 
-
-def replace_params(func_def, call_params, indentation, vars_in_scope):
-	stashLex()
+# Function responsible for inlining code. Replaces parameters where appropriate
+# and takes care of indentation
+def inline_code(func_def, call_params, indentation, vars_in_scope):
+	stashLex() #Save our progress in the inner loop where we are inlining code
 	
-	#print(call_params)
+	# Function info
 	fname = func_def["fname"]
 	fparams = func_def["params"]
 	fcode = func_def["fcode"]
 	fvars = func_def["fvars"]
+
 	print("INLINING: " + fname)
 	print(func_def["fcode"])
-	returnVar = genRandomVarName()
+	returnVar = genRandomVarName() #This is the variable we assign the return value to
 	fcode_inlined = []
-	for line in fcode:
+	
+	for line in fcode: # For each line in the function body
 		tabs = re.search("^(\t*)", line).group(1)
+
+		# Start building up the in-lined code by indenting it appropriately
 		line_inlined = indentation + tabs
 
+		# Parse through the line looking for identifiers
 		loadLex(line)
 		while True:
 			lex()
 			if token == EOL:
 				break
-			elif token == IDENTITY:
+			elif token == IDENTITY: # Found an identity
 				print("IDENTITY: " + text)
 				ident = text 
 				lex()
 				print("CHECK NEXT:" + text)
-				if token != LP:
+				if token != LP:		# Make sure it's not a function call
+					# Ensure's proper spacing between neighboring ids/keywords
 					if token == KEYWORD or token == IDENTITY:
 						wspace = " "
 					else:
 						wspace = ""
 
+					# If the ID is in the scope where we want to inline the code but it is not
+					# in the parameters of the function, the names will conflict! 
+					# To prevent this, we pretend this variable IS a parameter and that the function
+					# call passed in an ID which we generate
 					if (ident in vars_in_scope or ident in call_params) and ident not in fparams:
 						fparams.append(ident)
 						call_params.append(genRandomVarName())
-					print(func_def)
-					print(call_params)
+
+					# If the ID is a function parameter, we replace it with the ID passed in
+					# from the function call
 					if ident in fparams:
 						line_inlined += call_params[fparams.index(ident)] + " " + text + wspace
-					elif ident in vars_in_scope: 
-						line_inlined += genRandomVarName() + " " + text + wspace
 					else:
-						line_inlined += ident + " " + text + wspace
-				else:
-					line_inlined += ident + " " + text
+						line_inlined += ident + wspace + text + wspace
+				else: # Leave function calls alone
+					line_inlined += ident + text
 			elif token == KEYWORD:
-				print("KEYWORD: " + text)
+				# If we find a return statment, instead assign the return value
+				# the return variable we generated at the beginning of in-lining
 				if text == "return":
 					print("HELLO HI" + returnVar)
 					print(line_inlined)
@@ -247,34 +264,40 @@ def replace_params(func_def, call_params, indentation, vars_in_scope):
 					print(line_inlined)
 				else:
 					line_inlined += text + " "
-			else:
+				# NOTE! There is an inherent problem with this.
+				# It only works if there is a single return statement in the function.
+				# and it appears at the end. We could deal with this easily if python had goto statements
+			else: # Otherwise move on. We aren't interesting in replacing anything 
+				  # That isn't an identity or a return statement
 				print("MISC: " + text)
 				line_inlined += text
-		print(line_inlined)
+		# Add the rewritten line to the rewritten code
 		fcode_inlined.append(line_inlined + "\n")
-	restoreLex()
+	restoreLex() # Restore our progress in the inner loop before returning
 	return fcode_inlined, returnVar
 
-
+# Function to capture the body of function definitions
 def func_def(line_num, read_data, funcs):
-
+	# Regex to separate out information from the function definition header
 	def_found = re.search("^(\t*)def\s+(\w+)\s*\((.*)\)\s*:\s*(.*)\n$", read_data[line_num])
-	#print("FOUND A DEF!!")
+	
 	indent = len(def_found.group(1))
 	fname = def_found.group(2)
 	params_plus = def_found.group(3).replace(" ","").replace("\t","").split(",")
 	func_head = read_data[line_num][:-len(def_found.group(4))-1] + "\n"
 
 	params = []
+
+	# Separate parameters from their default values if they have any
 	if params_plus[0] != '':
-		##print(params_plus)
 		for param in params_plus:
 			loadLex(param)
 			lex()
 			params.append(text)
 
-	##print(len(def_found.group(4)))
+	# Next we want to capture the body of the text and run the parser on that
 	if len(def_found.group(4)) > 0 and not re.match("^\s*$", def_found.group(4)):
+		# Case of one line function declaration + body
 		body = [def_found.group(1) + def_found.group(4) + "\n"]
 	else:
 		body = []
@@ -285,8 +308,8 @@ def func_def(line_num, read_data, funcs):
 			indent2 = len(m2.group(1))
 
 			if indent2 > indent: #All lines in the functions will be indented more than the function def line
+				# Remove indentation preceding the function definition
 				indentless = re.match("^(\t*)(.*\n)$",read_data[line_num])
-				#print("INDENTLESS: " + indentless.group(2))
 				tabs = ""
 				for i in range(indent2-indent-1):
 					tabs += "\t"
@@ -295,19 +318,25 @@ def func_def(line_num, read_data, funcs):
 				line_num -= 1 # Corrective
 				break
 
-	f_code = {"fname": fname, "params": params, "fcode": body}
+	# Run the parser on the body of the function. Get back optimized code and vars in the scope of the function
+	opt_body, fvars, inlinable = parser(body, funcs, params, 0, def_found.group(1) + "\t", True) # We want to parse body of function recursively
+																						   # Funcs we have already found will be available to funcs defined inside current function
+	dedent_body = []
+	for i in range(len(opt_body)):
+		dedent_body.append(opt_body[i][1:])
 
-	funcs[fname] = f_code
+	# If inlinable, add this function to our record of functions in this scope
+	if inlinable:
+		f_code = {"fname": fname, "params": params, "fcode": dedent_body, "fvars": fvars}
+		funcs[fname] = f_code
 
-	opt_body, fvars = parser(f_code["fcode"], funcs, params, 0, def_found.group(1) + "\t") # We want to parse body of function recursively
-								# Funcs we have already found will be available to funcs defined inside current function
+	# Replace the old function definition with the optimized version
 	opt_code = [func_head] + opt_body
-	funcs[fname]["fvars"] = fvars
-	print("THE CAPTURE")
-	print(f_code)
-	return opt_code, line_num, funcs
+	return opt_code, line_num, funcs # Pass back up the opt_code, the line we are on in the old code,
+									 # and the updated dictionary of functions
 
-def loops(line_num, read_data, funcs, vars_in_scope):
+
+def loops(line_num, read_data, funcs, vars_in_scope, inlinable):
 	#print("FOUND A LOOP!")
 	##print(read_data[line_num])
 
@@ -315,10 +344,10 @@ def loops(line_num, read_data, funcs, vars_in_scope):
 	while_loop_found = re.search("^(\t*)while\s+.*:\s*(.*)\n$", read_data[line_num])
 
 	if for_loop_found:
+		# Add variables declared in for loop header to vars in scope
 		loop_found = for_loop_found
 		lex()
 		vars_in_scope += Target_List()
-
 	else:
 		loop_found = while_loop_found
 
@@ -327,15 +356,13 @@ def loops(line_num, read_data, funcs, vars_in_scope):
 
 	loop_head = read_data[line_num][:-len(loop_found.group(2))-1] + "\n"
 
-	# #print (len(first_line))
-	# #print(first_line)
 	if len(first_line) > 0 and not re.match("^\s*$", first_line):
+		# Deal with case of 1 line loop definition
 		body = [loop_found.group(1) + first_line + "\n"]
 	else:
 		body = []
 		while line_num < len(read_data)-1:
 			line_num += 1
-			##print(read_data[line_num])
 
 			m2 = re.search("^(\t*).*$",read_data[line_num])
 			indent2 = len(m2.group(1))
@@ -350,26 +377,26 @@ def loops(line_num, read_data, funcs, vars_in_scope):
 				line_num -= 1 # Corrective
 				break
 
-	opt_body, vars_in_scope = parser(body, funcs, vars_in_scope, 2, loop_found.group(1)+"\t") # We want to parse body of function recursively
+	opt_body, vars_in_scope, inlinable = parser(body, funcs, vars_in_scope, 2, loop_found.group(1)+"\t", inlinable) # We want to parse body of function recursively
 									# Set flag inner_loop to say 
 	opt_code = [loop_head] + opt_body
-	return opt_code, line_num, vars_in_scope
+	return opt_code, line_num, vars_in_scope, inlinable
 
 # NOTE ABOUT inner_loop
 # 0 = not in a loop
 # 1 = in a loop, but not the inner loop
 # 2 = in the inner loop
-def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_indentation = ""):
+def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_indentation = "", inlinable = False):
 	line_num = 0	#init counter
-	#funcs = {}	#init list for storing functions
-
 	opt_code = []
+	#inlinable = True #For function bodies, keep track if this can be inlined
 
 	while line_num < len(read_data):
-
-		if re.match("^\s*\n$", read_data[line_num]): #Skip empty lines 
+		#Skip empty lines 
+		if re.match("^\s*\n$", read_data[line_num]): 
 			line_num += 1
 			continue
+
 		#Clean out comments
 		if re.match("^\s*#.*$", read_data[line_num]): #Skip comment lines
 			line_num += 1
@@ -379,44 +406,40 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 			read_data[line_num] = comment_found.group(1) + "\n"
 
 
-		#opt_code.append(read_data[line_num])
+		# Load the line in the lexical analyzer
 		loadLex(read_data[line_num])
 		lex()
 
 		if token == KEYWORD:
+			# Found the start of a function definition!
 			if text == "def":
+				# Catch its body and run the parser on it
 				opt_body, line_num, funcs = func_def(line_num, read_data, funcs)
-				opt_code = opt_code + opt_body
+				opt_code = opt_code + opt_body # Append the optimized function to the new code
 
-				#print("VARSINSCOPE: ")
-				#print(vars_in_scope)
+			# Found the start of a loop!
 			elif text == "for" or text == "while":
 				if inner_loop == 2:
 					inner_loop = 1 # If we just found a loop, this can't the body of an inner loop
+				# Catch its body and run the parser on it
+				opt_body, line_num, vars_in_scope, inlinable = loops(line_num, read_data, funcs, vars_in_scope, inlinable)
+				opt_code = opt_code + opt_body # Append the optimized loop to the new code
 
-				opt_body, line_num, vars_in_scope = loops(line_num, read_data, funcs, vars_in_scope)
-
-				opt_code = opt_code + opt_body
-
-				#print("VARSINSCOPE: ")
-				#print(vars_in_scope)
-
-			elif text == "global":
+			# We assume functions that have return statements before their last line to not
+			# be in-lineable
+			elif text == "return" and (line_num < len(read_data) - 1 or inner_loop) > 0:
+				inlinable = False
 				opt_code.append(read_data[line_num])
-				lex()
-				vars_in_scope += Target_List()
-				vars_in_scope = list(set(vars_in_scope))
 			else:
 				opt_code.append(read_data[line_num])
-		elif token == IDENTITY:
-			#print("This line starts with an id!")
-			opt_code.append(read_data[line_num])
+		elif token == IDENTITY or token == LP or token == LB: # Lines starting with target lists could be newly assigned vars
+			opt_code.append(read_data[line_num]) # Append this line to our optimal code unchanged
 			new_ids = Target_List()
-			if token == ASSIGN:
+			if token == ASSIGN: # If these IDs are on the LHS of an assignment operator, add them to the vars in scope
 				vars_in_scope = vars_in_scope + new_ids
 				vars_in_scope = list(set(vars_in_scope))
-		else:
-			opt_code.append(read_data[line_num])
+		else: #This line has no information we need
+			opt_code.append(read_data[line_num]) # Append line unchanged
 
 		line_num += 1
 		
@@ -424,51 +447,54 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 	############################
 	# CODE HERE TO CATCH LOOPS # (assumes no function definition inside loops. FIX LATER)
 	############################
-	if(inner_loop == 2):
+	if(inner_loop == 2): # We have found an inner loop!
 		inlined_code = []
 		for line in opt_code:
 
+			# Get the indentation of the line to use for indenting the inlined code correctly
 			indent_match = re.search("^(\t*).*", line)
 			indentation = indent_match.group(1)
 
 			i = 0
-			line_rewrite = scope_indentation + indentation
+			line_rewrite = scope_indentation + indentation # Begin line with proper indentation
 
 			params_found = []
-			loadLex(line)
+			loadLex(line) # Begin lexical analysis of the line
 
 			while True:
 				lex()
 				if token == EOL:
 					break
-				elif token == IDENTITY:
+				elif token == IDENTITY: # We have found an identity!
 					the_id = text
 					lex()
 					after_id = text
-					if token == LP:
+					if token == LP: # This identity is a function call!
 						params_found = []
 						lit_to_var = []
 						old_params = ""
-						while token != RP:
+						while token != RP: # Grab the parameters!
+							# NOTE: It would be better to parse for comma-separated expressions here
+							# in order for this to work on a significantly larger portion of the language
 							lex()
 							if token == IDENTITY:
 								params_found.append(text)
-							elif token == STRLIT or token == NUMLIT:
+							elif token == STRLIT or token == NUMLIT or token == BOOLLIT:
+								# Literal values get assigned to variables which we pretend were passed in instead
 								varName = genRandomVarName()
 								params_found.append(varName)
 								lit_to_var.append(scope_indentation + indentation + varName + " = " + text + "\n")
 							elif token == RP:
 								break
-							old_params += text
+							old_params += text # Save the old parameter string in case we choose not to in-line
 
-						if the_id in funcs.keys():
-							#print("func defined")
-							inlined_code += lit_to_var
-							inline_it, returnVar = replace_params(funcs[the_id], params_found, scope_indentation + indentation, vars_in_scope)
-							inlined_code = inlined_code + inline_it
-							line_rewrite += returnVar + " "
-						else:
-							line_rewrite += the_id + "(" + old_params + ")"
+						if the_id in funcs.keys(): # If is a function we have the definition of, we in-line it
+							inlined_code += lit_to_var # Add the code assigning literal vals to vars first
+							inline_it, returnVar = inline_code(funcs[the_id], params_found, scope_indentation + indentation, vars_in_scope)
+							inlined_code = inlined_code + inline_it	# Add the in-lined code to the new body of the loop
+							line_rewrite += returnVar + " " # Replace function call with returnVar name
+						else:	# Function is not in our list of functions
+							line_rewrite += the_id + "(" + old_params + ")" # Rewrite the function call as is
 					elif token == EOL:
 						line_rewrite += the_id + " "
 						break
@@ -478,15 +504,16 @@ def parser(read_data, funcs = {}, vars_in_scope = [], inner_loop = 0, scope_inde
 					line_rewrite += text + " "
 				else:
 					line_rewrite += text
-				print line_rewrite
+			# Add the rewritten line to the inlined code
 			inlined_code.append(line_rewrite + "\n")
 
-		return inlined_code, vars_in_scope
+		return inlined_code, vars_in_scope, inlinable # Return the new loop body
 	else:
+		# Otherwise, we need to reindent this code for the next scope up
 		indented_opt_code = []
 		for line in opt_code:
 			indented_opt_code.append(scope_indentation + line)
-		return indented_opt_code, vars_in_scope
+		return indented_opt_code, vars_in_scope, inlinable
 	
 
 def main():
@@ -499,9 +526,9 @@ def main():
 		read_data = f.readlines()
 	print outputfile
 
-	opt_code, _ = parser(read_data) 
+	opt_code, _, _ = parser(read_data) 
 
-	##print(opt_code)
+	# Write the new code to a file
 	new_file = open(outputfile, 'w')
 	for item in opt_code:
 		##print(opt_code)
